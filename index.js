@@ -3,6 +3,7 @@ const cors = require('cors')
 const cookieParser = require('cookie-parser')
 const http = require('http')
 const path = require('path')
+const connectDB = require('./configs/db')
 require('dotenv').config()
 
 const ZingMp3Router = require('./routes')
@@ -13,6 +14,8 @@ app.use(cors())
 app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
 app.use(cookieParser())
+
+connectDB()
 
 app.use('/api/v2', cors(), ZingMp3Router)
 

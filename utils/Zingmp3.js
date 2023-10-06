@@ -1,216 +1,95 @@
-let request = require('request-promise')
-const { FileCookieStore } = require('tough-cookie-file-store')
-const fs = require('fs')
 
-const encrypt = require('./encrypt')
+const axios = require('axios');
+const { FileCookieStore } = require('tough-cookie-file-store');
+const { wrapper } = require('axios-cookiejar-support')
+const { CookieJar } = require('tough-cookie')
+const fs = require('fs');
+const encrypt = require('./encrypt');
 
-const URL_API = 'https://zingmp3.vn'
-const API_KEY = '88265e23d4284f25963e6eedac8fbfa3'
-const SECRET_KEY = '2aa2d1c561e809b267f3638c4a307aab'
-const VERSION = '1.4.2'
+const URL_API = process.env.ZINGMP3_BASE_URL;
+const API_KEY = process.env.ZINGMP3_API_KEY;
+const SECRET_KEY = process.env.ZINGMP3_SECRET_KEY;
 
-const cookiePath = 'ZingMp3.json'
+const cookiePath = 'ZingMp3.json';
 
-if (!fs.existsSync(cookiePath)) fs.closeSync(fs.openSync(cookiePath, 'w'))
+if (!fs.existsSync(cookiePath)) fs.closeSync(fs.openSync(cookiePath, 'w'));
 
-let cookiejar = request.jar(new FileCookieStore(cookiePath))
+const cookiejar =  new CookieJar(new FileCookieStore(cookiePath))
 
-request = request.defaults({
-    baseUrl: URL_API,
-    qs: {
-        apiKey: API_KEY,
-    },
-    gzip: true,
-    json: true,
-    jar: cookiejar,
+const axiosInstance = axios.create({
+  baseURL: URL_API,
+  params: {
+    apiKey: API_KEY,
+  },
+  timeout: 1000,
 })
+
+wrapper(axiosInstance)
+
 class ZingMp3 {
-    constructor() {
-        this.time = null
-    }
-
-    getFullInfoSong(id) {
-        return new Promise(async (resolve, reject) => {
-            try {
-                let data = await Promise.all([
-                    this.getInfoMusic(id),
-                    this.getStreaming(id),
-                ])
-                resolve({ ...data[0], streaming: data[1] })
-            } catch (err) {
-                reject(err)
-            }
-        })
-    }
-
-    getSectionBottom(id) {
-        return this.requestZing({
-            path: '/api/v2/playlist/get/section-bottom',
-            qs: {
-                id,
-            },
-        })
-    }
-
-    getDetailPlaylist(id) {
-        return this.requestZing({
-            path: '/api/v2/page/get/playlist',
-            qs: {
-                id,
-            },
-        })
-    }
-
-    getDetailArtist(alias) {
-        return this.requestZing({
-            path: '/api/v2/page/get/artist',
-            qs: {
-                alias,
-            },
-            haveParam: 1,
-        })
-    }
-
-    getInfoSong(id) {
-        return this.requestZing({
-            path: '/api/v2/song/get/info',
-            qs: {
-                id,
-            },
-        })
-    }
-
-    getSong(id) {
-        return this.requestZing({
-            path: '/api/v2/song/get/streaming',
-            qs: {
-                id,
-            },
-        })
-    }
-
-    getHome(page = 1) {
-        return this.requestZing({
-            path: '/api/v2/page/get/home',
-            qs: {
-                page
-            },
-        })
-    }
-
-    getChartHome() {
-        return this.requestZing({
-            path: '/api/v2/page/get/chart-home',
-        })
-    }
-
-    getWeekChart(id) {
-        return this.requestZing({
-            path: '/api/v2/page/get/week-chart',
-            qs: { id },
-        })
-    }
-
-    getNewReleaseChart() {
-        return this.requestZing({
-            path: '/api/v2/page/get/newrelease-chart',
-        })
-    }
-
-    getTop100() {
-        return this.requestZing({
-            path: '/api/v2/page/get/top-100',
-        })
-    }
-
-    getSearch(keyword) {
-        return this.requestZing({
-            path: '/api/v2/search/multi',
-            qs: {
-                q: keyword,
-            },
-            haveParam: 1,
-        })
-    }
-
-    getHubHome() {
-      return this.requestZing({
+  constructor() {
+    this.time = null;
+  }
+  async getHubHome() {
+    try {
+      return await this.axiosZing({
         path: '/api/v2/page/get/hub-home',
-    })
+      });
+    } catch (error) {
+      throw error;
     }
+  }
 
-    getHubDetail(id) {
-      return this.requestZing({
-        path: '/api/v2/page/get/hub-detail',
-        qs: { id }
-      })
-    }
-
-    getSectionRelateVideo(id) {
-      return this.requestZing({
-        path: '/api/v2/video/get/section-relate',
-        qs: { id }
-      })
-    }
-
-    getVideo(id) {
-      return this.requestZing({
-        path: '/api/v2/page/get/video',
-        qs: { id }
-      })
-    }
-
-    getRadio() {
-      return this.requestZing({
+  async getRadio() {
+    try {
+      return await this.axiosZing({
         path: '/api/v2/page/get/radio',
-      })
+      });
+    } catch (error) {
+      throw error;
     }
+  }
 
-    getLyric(id) {
-      return this.requestZing({
-        path: '/api/v2/lyric/get/lyric',
-        qs: { id }
-      })
+  async getCookie() {
+    try {
+			if (cookiejar.getCookiesSync(URL_API)) await axiosInstance.get('/')
+			else console.log(cookiejar.getCookiesSync(URL_API));
+    } catch (error) {
+      throw error;
     }
+  }
 
-    async getCookie() {
-        if (!cookiejar._jar.store.idx['zingmp3.vn']) await request.get('/')
+  async axiosZing({ path, params, haveParam }) {
+    try {
+      await this.getCookie();
+      const param = new URLSearchParams(params).toString();
+      const sig = this.hashParam(path, param, haveParam);
+
+      const { data } = await axiosInstance.get(path, {
+        params: {
+          ...param,
+          ctime: this.time,
+          sig,
+        },
+				jar: cookiejar,
+      });
+
+      if (data.err) {
+        return data
+      }
+      return data.data;
+    } catch (error) {
+      throw error;
     }
+  }
 
-    requestZing({ path, qs, haveParam }) {
-        return new Promise(async (resolve, reject) => {
-            try {
-                await this.getCookie()
-                let param = new URLSearchParams(qs).toString()
-
-                let sig = this.hashParam(path, param, haveParam)
-
-                const data = await request({
-                    uri: path,
-                    qs: {
-                        ...qs,
-                        ctime: this.time,
-                        sig,
-                    },
-                })
-
-                if (data.err) reject(data)
-                resolve(data.data)
-            } catch (error) {
-                reject(error)
-            }
-        })
-    }
-
-    hashParam(path, param = '', haveParam = 0) {
-        this.time = Math.floor(Date.now() / 1000)
-        // this.time = '1634406003'
-
-        let strHash = `ctime=${this.time}`
-        if (haveParam === 0) strHash += param
-        const hash256 = encrypt.getHash256(strHash)
-        return encrypt.getHmac512(path + hash256, SECRET_KEY)
-    }
+  hashParam(path, param, haveParam = 0) {
+    this.time = Math.floor(Date.now() / 1000);
+    let strHash = `ctime=${this.time}`;
+    if (haveParam === 0) strHash += param;
+    const hash256 = encrypt.getHash256(strHash);
+    return encrypt.getHmac512(path + hash256, SECRET_KEY);
+  }
 }
 
-module.exports = new ZingMp3()
+module.exports = new ZingMp3();
